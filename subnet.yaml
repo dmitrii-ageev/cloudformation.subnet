@@ -1,0 +1,118 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Creates public/private subnet within a VPC
+Parameters:
+  Name:
+    Description: A subnet name
+    Type: String
+    AllowedPattern: "^$|.*"
+    Default: "Subnet"
+  Type:
+    Description: A subnet type
+    Type: String
+    AllowedValues:
+      - public
+      - private
+    Default: public
+  VPC:
+    Description: A VPC Id
+    Type: String
+    AllowedPattern: "^vpc-[a-fA-F0-9]{17}$"
+  InternetGateway:
+    Description: An Interget gateway Id
+    Type: String
+    AllowedPattern: "^$|^igw-[a-fA-F0-9]{17}$"
+    Default: ""
+  AvailabilityZone:
+    Description: An availability zone
+    Type: String
+    AllowedPattern: "^[a-z]{2}-[a-z]{4,}+-[1-9][a-z]{1}$"
+  CidrBlock:
+    Description: A subnet CIDR block
+    Type: String
+    AllowedPattern: "^([0-9]{1,3}.){3}[0-9]{1,3}(/([0-9]|[1-2][0-9]|3[0-2]))?$"
+    Default: "10.0.0.0/24"
+
+Conditions:
+  NoName: !Equals
+    - !Ref Name
+    - ""
+  PublicSubnet: !Equals
+    - !Ref Type
+    - public
+  PrivateSubnet: !Equals
+    - !Ref Type
+    - private
+
+Resources:
+  Subnet:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Ref AvailabilityZone
+      CidrBlock: !Ref CidrBlock
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value:
+            Fn::If:
+              - NoName
+              - Fn::Join
+                 - !Ref Type
+                 - -subnet
+              - !Ref Name
+  EIP:
+    Condition: PrivateSubnet
+    Type: AWS::EC2::EIP
+    Properties:
+      Tags:
+        - Key: Name
+          Value: EIP
+  NAT:
+    Condition: PrivateSubnet
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId:
+        Fn::GetAtt:
+          - EIP
+          - AllocationId
+      SubnetId:
+        Ref: Subnet
+      Tags:
+        - Key: Name
+          Value: NAT
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId:
+        Ref: VPC
+      Tags:
+        - Key: Name
+          Value: RouteTable
+  DefaultNatRoute:
+    Condition: PrivateSubnet
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId:
+        Ref: RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NAT
+  DefaultIGWRoute:
+    Condition: PublicSubnet
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId:
+        Ref: RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  SubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref Subnet
+      RouteTableId: !Ref RouteTable
+
+Outputs:
+  SubnetId:
+    Description: The subnet Id
+    Value: !Ref Subnet
+    Export:
+      Name: !Sub "${AWS::StackName}-SubnetId"
