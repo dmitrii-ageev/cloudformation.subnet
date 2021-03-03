@@ -50,7 +50,11 @@ Resources:
       VpcId: !Ref VPC
       AvailabilityZone: !Ref AvailabilityZone
       CidrBlock: !Ref CidrBlock
-      MapPublicIpOnLaunch: false
+      MapPublicIpOnLaunch:
+        Fn::If:
+          - PublicSubnet
+          - true
+          - false
       Tags:
         - Key: Name
           Value:
